@@ -1,0 +1,23 @@
+# секреты и ключи
+tts/.secrets/
+*.env
+
+# кэш Godot и сам движок (139 МБ, качается отдельно)
+godot/.godot/
+Godot_v*-stable_linux.x86_64
+
+# артефакты рендера и звука
+.tmp/
+render/*.mp4
+render/*.avi
+vo/lines/*.mp3
+vo/*.mp4
+vo/audition/
+
+# медиа, которое не распространяем (права на записи)
+assets/music/
+Классическая музыка из кинофильмов/
+
+# python
+__pycache__/
+*.pyc

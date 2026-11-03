@@ -24,6 +24,8 @@ var camera: Camera3D
 var hud: Node
 var env: Environment
 var pieces := {}     # стартовая клетка -> запись
+var ghosts := {}     # призрачные фигуры варианта
+var ghost_on := false
 var by_square := {}  # текущая клетка -> запись
 
 
@@ -35,6 +37,7 @@ func _ready() -> void:
 	_build_environment()
 	_build_board()
 	_build_pieces_from_fen(_start_fen())
+	_build_ghosts(gdata)
 	_build_timeline(gdata)
 	_build_floor()
 	_build_dust()
@@ -268,6 +271,92 @@ func _build_pieces_from_fen(fen: String) -> void:
 			file += 1
 
 
+func _ghost_material(white: bool) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.60, 0.92, 1.0, 0.0) if white else Color(1.0, 0.42, 0.52, 0.0)
+	m.emission_enabled = true
+	m.emission = Color(0.35, 0.80, 1.0) if white else Color(1.0, 0.30, 0.42)
+	m.emission_energy_multiplier = 1.4
+	m.no_depth_test = false
+	return m
+
+
+func _build_ghosts(data: Dictionary) -> void:
+	if film != "v2":
+		return
+	var fen := String(data["moves"][33]["fen"])
+	var rows := fen.split(" ")[0].split("/")
+	for i in 8:
+		var rank := 8 - i
+		var file := 0
+		for ch in rows[i]:
+			if ch.to_int() > 0:
+				file += ch.to_int()
+				continue
+			var side := "w" if ch == ch.to_upper() else "b"
+			var sq := String.chr(97 + file) + str(rank)
+			var mi := MeshInstance3D.new()
+			mi.mesh = Pieces.build(ch.to_lower())
+			mi.material_override = _ghost_material(side == "w")
+			mi.position = Board.square_to_world(sq)
+			mi.visible = false
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
+			ghosts[sq] = mi
+			file += 1
+
+
+func _dim_real(a: float) -> void:
+	for k in pieces:
+		var node = pieces[k]["node"]
+		var m: StandardMaterial3D = node.mat
+		if m.albedo_color.a > 0.02:
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.albedo_color.a = a
+
+
+func _update_whatif(t: float) -> void:
+	var t0: float = TL.WHATIF_T0
+	var t1: float = TL.WHATIF_T1
+	var fade := minf(clampf((t - t0) / 0.45, 0.0, 1.0), clampf((t1 - t) / 0.45, 0.0, 1.0))
+	ghost_on = true
+	var local := t - t0
+	for sq in ghosts:
+		var mi: MeshInstance3D = ghosts[sq]
+		mi.visible = fade > 0.02
+		mi.position = Board.square_to_world(sq)
+		var m: StandardMaterial3D = mi.material_override
+		m.albedo_color.a = 0.55 * fade
+	for mv in TL.whatif_moves():
+		var mt: float = mv["t"]
+		if local < mt:
+			continue
+		var node: MeshInstance3D = ghosts.get(String(mv["from"]))
+		if node == null:
+			continue
+		var a := Board.square_to_world(String(mv["from"]))
+		var b := Board.square_to_world(String(mv["to"]))
+		var u := clampf((local - mt) / 0.85, 0.0, 1.0)
+		var e := u * u * (3.0 - 2.0 * u)
+		node.position = a.lerp(b, e) + Vector3(0, 0.12 * sin(PI * u), 0)
+	_dim_real(0.18)
+
+
+func _end_whatif() -> void:
+	if not ghost_on:
+		return
+	ghost_on = false
+	for sq in ghosts:
+		(ghosts[sq] as MeshInstance3D).visible = false
+	for k in pieces:
+		var node = pieces[k]["node"]
+		var m: StandardMaterial3D = node.mat
+		if m.albedo_color.a > 0.02:
+			m.albedo_color.a = 1.0
+
+
 func _build_timeline(data: Dictionary) -> void:
 	var moves: Array = data["moves"]
 	for i in moves.size():
@@ -474,6 +563,11 @@ func _update(t: float) -> void:
 	env.tonemap_exposure = 0.86 * (fade * fade * (3.0 - 2.0 * fade))
 	for k in pieces:
 		_eval_piece(pieces[k], t)
+	if film == "v2":
+		if TL.whatif_active(t):
+			_update_whatif(t)
+		else:
+			_end_whatif()
 	var shot := TL.shot_at(t)
 	var fp := _follow_pos(String(shot.get("sq", "")))
 	var cam := TL.camera_at(t, fp, shot)

@@ -62,6 +62,25 @@ const SEGMENTS := [
 ]
 
 const END_T0 := 284.6
+# «А если бы взял слона» — призрачный вариант внутри кадра
+const WHATIF_T0 := 127.4
+const WHATIF_T1 := 135.1
+const WHATIF_MOVES := [
+	{"t": 0.00, "from": "c4", "to": "e6"},
+	{"t": 1.15, "from": "b6", "to": "b5"},
+	{"t": 2.30, "from": "e6", "to": "c4"},
+	{"t": 3.45, "from": "b5", "to": "c4"},
+	{"t": 4.60, "from": "f1", "to": "g1"},
+	{"t": 5.75, "from": "c3", "to": "e2"},
+]
+
+
+static func whatif_active(t: float) -> bool:
+	return t >= WHATIF_T0 and t <= WHATIF_T1
+
+
+static func whatif_moves() -> Array:
+	return WHATIF_MOVES
 const TITLE_T0 := 12.0
 const TITLE_T1 := 21.0
 
@@ -210,6 +229,8 @@ static func _anchor() -> Dictionary:
 
 ## Оценка камеры. follow_pos — позиция фигуры для chase.
 static func camera_at(t: float, follow_pos: Vector3, seg: Dictionary) -> Dictionary:
+	if whatif_active(t):
+		return {"pos": _orbit_pos(ANCHOR_AZ + 9.0, 46.0, 11.6), "target": ANCHOR_TGT, "fov": 40.0}
 	var t0 := float(seg.get("t0", 0.0))
 	var t1 := float(seg.get("t1", TOTAL))
 	var u := clampf((t - t0) / maxf(0.001, t1 - t0), 0.0, 1.0)

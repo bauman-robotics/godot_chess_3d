@@ -6,9 +6,13 @@ const Board := preload("res://scripts/board.gd")
 const Pieces := preload("res://scripts/pieces.gd")
 const Mat := preload("res://scripts/mat.gd")
 const Piece := preload("res://scripts/piece.gd")
-const TL := preload("res://scripts/timeline.gd")
+const TL_V1 := preload("res://scripts/timeline.gd")
+const TL_V2 := preload("res://scripts/timeline_v2.gd")
 const HUD := preload("res://scripts/hud.gd")
 
+var TL = TL_V1
+var film := "v1"
+var dump_cues := ""
 var fps := 30.0
 var frame := 0
 var start_t := 0.0
@@ -25,14 +29,20 @@ var by_square := {}  # текущая клетка -> запись
 
 func _ready() -> void:
 	_parse_args()
+	var gdata := _load_game()
+	if TL == TL_V2:
+		TL.set_game(gdata)
 	_build_environment()
 	_build_board()
 	_build_pieces_from_fen(_start_fen())
-	_build_timeline(_load_game())
+	_build_timeline(gdata)
 	_build_floor()
 	_build_dust()
 	_build_camera()
 	_build_hud()
+	if dump_cues != "":
+		_dump_cues(dump_cues)
+		get_tree().quit()
 	print("pieces=", pieces.size(), " tris=", Pieces.triangles(), " total=", TL.TOTAL)
 
 
@@ -42,10 +52,19 @@ func _parse_args() -> void:
 			start_t = float(a.substr(8))
 		elif a.begins_with("--frames="):
 			max_frames = int(a.substr(9))
+		elif a.begins_with("--film="):
+			film = a.substr(7)
+		elif a.begins_with("--dump-cues="):
+			dump_cues = a.substr(12)
+		elif a.begins_with("--fps="):
+			fps = float(a.substr(6))
+	if film == "v2":
+		TL = TL_V2
 
 
 func _load_game() -> Dictionary:
-	var f := FileAccess.open("res://data/game.json", FileAccess.READ)
+	var path := "res://data/game2.json" if film == "v2" else "res://data/game.json"
+	var f := FileAccess.open(path, FileAccess.READ)
 	return JSON.parse_string(f.get_as_text())
 
 
@@ -217,6 +236,7 @@ func _build_camera() -> void:
 func _build_hud() -> void:
 	hud = HUD.new()
 	add_child(hud)
+	hud.TL = TL
 	hud.setup()
 
 
@@ -258,14 +278,17 @@ func _build_timeline(data: Dictionary) -> void:
 			continue
 		var from := Board.square_to_world(String(mv["from"]))
 		var to := Board.square_to_world(String(mv["to"]))
-		var t0: float = TL.SCHEDULE[i]
-		var dur: float = TL.MOVE_DUR
+		var t0: float = TL.schedule()[i]
+		var dur: float = 1.15
 		var arc := 0.20
 		if String(mv["piece"]) == "n":
 			arc = 0.40
 		if bool(mv["mate"]):
-			dur = 2.60
+			dur = 2.60 if film == "v1" else 1.90
 			arc = 0.34
+		if film == "v2":
+			dur = clampf(TL._beat(i + 1) * 0.42, 1.0, 3.2)
+			arc = 0.26
 		rec["events"].append({"type": "move", "t0": t0, "dur": dur,
 			"from": from, "to": to, "arc": arc})
 
@@ -276,8 +299,24 @@ func _build_timeline(data: Dictionary) -> void:
 			dir.y = 0
 			dir = dir.normalized()
 			var impact: float = t0 + (dur - 0.14 if bool(mv["mate"]) else 0.42)
-			victim["events"].append({"type": "fall", "t0": impact, "dur": 0.62,
-				"dir": dir, "pivot": to + dir * 0.24, "side": 1.0})
+			if film == "v2":
+				var ctype := String(mv["capture"])
+				var vmode := "fly"
+				var vdur := 0.95
+				if ctype == "p":
+					vmode = "dust"
+					vdur = 0.80
+				elif ctype == "q":
+					vmode = "spark"
+					vdur = 1.05
+				elif ctype == "k":
+					vmode = "king"
+					vdur = 1.60
+				victim["events"].append({"type": "vanish", "t0": impact, "dur": vdur,
+					"mode": vmode, "dir": dir})
+			else:
+				victim["events"].append({"type": "fall", "t0": impact, "dur": 0.62,
+					"dir": dir, "pivot": to + dir * 0.24, "side": 1.0})
 			by_square.erase(String(mv["to"]))
 
 		# рокировка
@@ -313,8 +352,10 @@ func _eval_piece(rec: Dictionary, t: float) -> void:
 	var pos: Vector3 = Board.square_to_world(String(rec["start"]))
 	var yaw: float = rec["yaw"]
 	var fall = null
+	var vanish = null
 	for e in rec["events"]:
-		if String(e["type"]) == "move":
+		var et := String(e["type"])
+		if et == "move":
 			var t0: float = e["t0"]
 			var d: float = e["dur"]
 			if t >= t0:
@@ -324,24 +365,88 @@ func _eval_piece(rec: Dictionary, t: float) -> void:
 					pos = (e["from"] as Vector3).lerp(e["to"], u) + Vector3(0, float(e["arc"]) * sin(PI * mu), 0)
 				else:
 					pos = e["to"]
-		elif String(e["type"]) == "fall":
+		elif et == "fall":
 			if t >= float(e["t0"]):
 				fall = e
+		elif et == "vanish":
+			if t >= float(e["t0"]):
+				vanish = e
+
+	# исчезновение съеденной фигуры
+	if vanish != null:
+		var v: Dictionary = vanish
+		var uu := clampf((t - float(v["t0"])) / float(v["dur"]), 0.0, 1.0)
+		var mode := String(v["mode"])
+		var sc := 1.0
+		var alpha := 1.0
+		match mode:
+			"fly":
+				pos.y += 7.5 * uu * uu
+				yaw += uu * 7.0
+				sc = lerpf(1.0, 0.10, uu)
+				alpha = 1.0 - smoothstep(0.45, 1.0, uu)
+			"dust":
+				pos.y -= 0.12 * uu
+				sc = lerpf(1.0, 0.05, uu)
+				alpha = 1.0 - uu * uu
+			"spark":
+				sc = lerpf(1.0, 0.02, uu)
+				alpha = 1.0 - uu
+			"king":
+				pos.y += 2.8 * uu * uu
+				sc = lerpf(1.0, 0.25, uu)
+				alpha = 1.0 - smoothstep(0.5, 1.0, uu)
+		rec["cur"] = pos
+		node.position = pos
+		node.basis = Basis(Vector3.UP, yaw).scaled(Vector3(sc, sc, sc))
+		var m: StandardMaterial3D = node.mat
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color.a = alpha
+		if mode == "spark":
+			m.emission_enabled = true
+			m.emission = Color(1.0, 0.65, 0.25)
+			m.emission_energy_multiplier = 2.5 * (1.0 - uu)
+		return
+
 	rec["cur"] = pos
 	if fall == null:
 		node.position = pos
 		node.basis = Basis(Vector3.UP, yaw)
 		return
-	var uu := clampf((t - float(fall["t0"])) / float(fall["dur"]), 0.0, 1.0)
-	var ang := deg_to_rad(86.0) * (1.0 - pow(1.0 - uu, 3.0))
-	if uu > 0.86:
-		ang -= deg_to_rad(4.0) * sin((uu - 0.86) / 0.14 * PI)
+	var uu2 := clampf((t - float(fall["t0"])) / float(fall["dur"]), 0.0, 1.0)
+	var ang := deg_to_rad(86.0) * (1.0 - pow(1.0 - uu2, 3.0))
+	if uu2 > 0.86:
+		ang -= deg_to_rad(4.0) * sin((uu2 - 0.86) / 0.14 * PI)
 	var fdir: Vector3 = fall["dir"]
 	var axis := Vector3.UP.cross(fdir).normalized()
 	var rot := Basis(axis, ang) * Basis(Vector3.UP, yaw)
 	var pivot: Vector3 = fall["pivot"]
 	node.basis = rot
 	node.position = rot * (pos - pivot) + pivot
+
+
+func _dump_cues(path: String) -> void:
+	var sched: Array = TL.schedule()
+	var caps := []
+	for c in TL._free:
+		caps.append({"start": float(c[0]), "end": float(c[1]), "text": String(c[2])})
+	for c in TL._ply_caps:
+		var p0 := int(c[0])
+		var p1 := int(c[1])
+		var t0: float = sched[p0 - 1]
+		var t1: float = (sched[p1] + 1.2) if p1 < 82 else (sched[81] + 9.0)
+		caps.append({"start": t0, "end": t1, "text": String(c[2])})
+	caps.sort_custom(func(a, b): return a["start"] < b["start"])
+	for i in range(caps.size()):
+		caps[i]["i"] = i + 1
+	var moves := []
+	var data := _load_game()
+	for k in range(data["moves"].size()):
+		moves.append({"t": float(sched[k]), "san": String(data["moves"][k]["san"])})
+	var out := {"fps": 30, "duration": TL.TOTAL, "captions": caps, "moves": moves}
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(JSON.stringify(out, " "))
+	print("cues: ", path, " реплик=", caps.size())
 
 
 func _follow_pos(sq: String) -> Vector3:

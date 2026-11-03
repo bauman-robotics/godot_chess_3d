@@ -2,7 +2,7 @@ extends CanvasLayer
 ## Графика поверх кадра: реплики, нотация, часы, eval-бар, титул, финальная плашка.
 ## Свёрстано в координатах 1920×1080 и масштабируется под фактическое разрешение.
 
-const TL := preload("res://scripts/timeline.gd")
+var TL = preload("res://scripts/timeline.gd")
 const FONT_R := preload("res://data/fonts/DejaVuSansCondensed.ttf")
 const FONT_B := preload("res://data/fonts/DejaVuSansCondensed-Bold.ttf")
 
@@ -83,11 +83,11 @@ func setup() -> void:
 	title_big = _mk_label(PAPER, 150, 1600, HORIZONTAL_ALIGNMENT_CENTER)
 	title_big.position = Vector2(160, 430)
 	title_big.size = Vector2(1600, 190)
-	title_big.text = "11 ХОДОВ"
+	title_big.text = TL.TITLE_TEXT
 	title_sub = _mk_label(GOLD, 40, 1600, HORIZONTAL_ALIGNMENT_CENTER)
 	title_sub.position = Vector2(160, 620)
 	title_sub.size = Vector2(1600, 60)
-	title_sub.text = "мастер-класс по скоростному поражению"
+	title_sub.text = TL.TITLE_SUB
 
 	title_rule = ColorRect.new()
 	title_rule.color = GOLD
@@ -104,11 +104,11 @@ func setup() -> void:
 	end_lbl = _mk_label(PAPER, 120, 1200, HORIZONTAL_ALIGNMENT_CENTER)
 	end_lbl.position = Vector2(360, 400)
 	end_lbl.size = Vector2(1200, 160)
-	end_lbl.text = "0 — 1"
+	end_lbl.text = TL.END_MAIN
 	end_sub = _mk_label(GOLD, 38, 1400, HORIZONTAL_ALIGNMENT_CENTER)
 	end_sub.position = Vector2(260, 580)
 	end_sub.size = Vector2(1400, 100)
-	end_sub.text = "11 ходов. 15 очков рейтинга. 0 понимания."
+	end_sub.text = TL.END_SUB
 
 	# eval-бар справа
 	var bx := 1770.0
@@ -202,15 +202,13 @@ func update(t: float) -> void:
 	if text == "":
 		_fade(caption, 0.0)
 	else:
-		var a := 1.0
-		for c in TL.CAPTIONS:
-			if String(c[2]) == text:
-				var t0 := float(c[0])
-				var t1 := float(c[1])
-				a = minf(clampf((t - t0) / 0.28, 0.0, 1.0), clampf((t1 - t) / 0.28, 0.0, 1.0))
-				break
 		caption.text = text
-		_fade(caption, a)
+		# жёстко фиксируем геометрию: длинный прогон иначе «уплывает» вниз
+		caption.position = Vector2(100, 906)
+		caption.size = Vector2(1720, 152)
+		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_fade(caption, TL.caption_fade(t))
 
 	# нотация
 	var tag := TL.move_tag_at(t)
@@ -221,16 +219,15 @@ func update(t: float) -> void:
 		_fade(move_tag, 1.0)
 
 	# часы
-	var show_clock := t >= 18.0 and t < 170.0
-	_fade(clock_w, 0.85 if show_clock else 0.0)
+	var show_clock: bool = bool(TL.HAS_CLOCK) and t >= 18.0 and t < 170.0
+	var top_text := TL.clock_text(t)
+	clock_w.text = String(top_text[0])
+	clock_b.text = String(top_text[1])
+	_fade(clock_w, 0.85 if (show_clock or top_text[0] != "") else 0.0)
 	_fade(clock_b, 0.85 if show_clock else 0.0)
-	var wsec := 900.0 - maxf(0.0, (t - 26.0)) * 4.1
-	wsec = maxf(wsec, 318.0)
-	clock_w.text = "%d:%02d  белые" % [int(wsec) / 60, int(wsec) % 60]
-	clock_b.text = "%d:%02d  чёрные" % [14, 52 - int(maxf(0.0, t - 26.0) / 30.0)]
 
 	# eval
-	var show_eval := t >= 18.0 and t < 170.0
+	var show_eval: bool = bool(TL.HAS_EVAL) and t >= 18.0 and t < 170.0
 	var ev := TL.eval_at(t)
 	var frac := (ev + 1.0) * 0.5  # 0 = чёрные, 1 = белые
 	var boundary := 250.0 + 520.0 * (1.0 - frac)
@@ -247,7 +244,7 @@ func update(t: float) -> void:
 		eval_lbl.text = "0.0"
 	for n in [eval_bg, eval_white, eval_black, eval_line, eval_lbl]:
 		_fade(n, 0.9 if show_eval else 0.0)
-	_fade(top_band, 1.0 if show_clock else 0.0)
+	_fade(top_band, 1.0 if (show_clock or top_text[0] != "") else 0.0)
 	_fade(bot_band, 1.0 if text != "" else 0.0)
 
 	# титул
@@ -258,13 +255,13 @@ func update(t: float) -> void:
 		title_sub.position.x = 160 + dx
 		title_rule.size.x = 400.0 * ta
 		title_rule.position.x = 960.0 - title_rule.size.x * 0.5
-	title_big.text = "11 ХОДОВ"
+	title_big.text = TL.TITLE_TEXT
 	_fade(title_big, ta)
 	_fade(title_sub, ta * 0.95)
 	_fade(title_rule, ta)
 
 	# финальная плашка
-	var ea := minf(clampf((t - TL.END_T0 - 0.8) / 1.2, 0.0, 1.0), clampf((179.6 - t) / 0.8, 0.0, 1.0))
+	var ea := minf(clampf((t - float(TL.END_T0) - 0.8) / 1.2, 0.0, 1.0), clampf((float(TL.TOTAL) - 0.4 - t) / 0.8, 0.0, 1.0))
 	_fade(end_lbl, ea)
 	_fade(end_sub, ea * 0.9)
 	_fade(end_scrim, ea * 0.9)

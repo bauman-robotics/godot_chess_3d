@@ -8,9 +8,17 @@
 изо всех сил сохраняет серьёзное лицо. Музыка — «Сарабанда» Генделя, которая сама заканчивается
 вместе с роликом.
 
-## Видео
+## Фильмы
 
-**[Смотреть на Vimeo](https://vimeo.com/1242551854)** — 3:00, 1920×1080, 30 fps, со звуком.
+| Ролик | Длительность | О чём | Видео |
+|---|---|---|---|
+| **11 ходов** | 3:00 | MktChess — DenNedelin, lichess 2026, мат на 11-м ходу | [Vimeo](https://vimeo.com/1242551854) |
+| **Партия века** | 4:56 | Byrne — Fischer, Нью-Йорк 1956, жертва ферзя | `render/par_tiya_veka_1080p.mp4` |
+
+Первый собран на «Сарабанде» Генделя, второй — на «Полёте валькирий» Вагнера,
+с новыми типами камеры (якорные планы, орбита вокруг короля) и исчезновением
+съеденных фигур: пешки рассыпаются в пыль, кони и слоны улетают в темноту,
+ферзь сгорает искрой, король гаснет последним.
 
 Для встраивания на сайт готов `docs/embed.html` — iframe-плеер с адаптивной вёрсткой.
 
@@ -45,6 +53,14 @@ tools/mix_audio.py ────────────────────�
 Нужны Godot 4.6.2 (бинарник в корне, в репозиторий не входит), ffmpeg и Python 3.
 
 ```bash
+# «Партия века» — второй ролик, 82 полухода
+GODOT=./Godot_v4.6.2-stable_linux.x86_64
+$GODOT --path godot --headless -- --film=v2 --dump-cues=$PWD/render/cues_v2.json
+python3 tools/tts_build.py --voice filipp --cues render/cues_v2.json --dir vo2
+$GODOT --path godot --write-movie render/v2.avi --fixed-fps 30 -- --film=v2
+python3 tools/mix_audio.py --audio-out render/v2_audio.m4a --music ".../Вагнер.mp3" \
+    --music-gain 0.28 --duration 296 --lines vo2/lines.json --out /dev/null
+
 ./tools/render.sh preview          # 720p, Compatibility — черновик (~11 мин)
 ./tools/render.sh final            # 1080p, Forward+ — финал (~45 мин на CPU)
 ./tools/render.sh stills 20 115    # стоп-кадры в render/stills/
@@ -66,9 +82,12 @@ python3 tools/mix_audio.py \
 
 ```
 godot/                  проект: сцена, процедурные фигуры, таймлайн, HUD
-  scripts/timeline.gd   единственный источник правды: планы, реплики, расписание ходов
-  scripts/main.gd       режиссёр: состояние сцены на момент t
-  data/game.json        партия, разобранная python-chess
+  scripts/timeline.gd   «11 ходов»: планы, реплики, расписание
+  scripts/timeline_v2.gd «Партия века»: 82 полухода, якоря, орбита, исчезновение фигур
+  scripts/main.gd       режиссёр: состояние сцены на момент t (--film=v1|v2)
+  data/game.json        партия для первого ролика
+  data/game2.json       Byrne — Fischer, разобранная python-chess
+  data/captions_v2.json реплики второго ролика (их же читает TTS)
 docs/TZ.md              техническое задание и фактические параметры
 docs/storyboard.md      раскадровка (генерируется из timeline.gd)
 docs/voiceover_ru.md    что и когда звучит

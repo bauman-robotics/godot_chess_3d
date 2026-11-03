@@ -8,6 +8,7 @@ var ptype := "p"
 var side := "w"
 var square := ""
 var mesh_inst: MeshInstance3D
+var mat: StandardMaterial3D
 var home := Vector3.ZERO
 var fallen := false
 var yaw := 0.0
@@ -25,7 +26,8 @@ func _ready() -> void:
 	home = Vector3.ZERO
 	mesh_inst = MeshInstance3D.new()
 	mesh_inst.mesh = Pieces.build(ptype)
-	mesh_inst.material_override = Mat.ivory() if side == "w" else Mat.ebony()
+	mat = (Mat.ivory() if side == "w" else Mat.ebony()).duplicate()
+	mesh_inst.material_override = mat
 	mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(mesh_inst)
 

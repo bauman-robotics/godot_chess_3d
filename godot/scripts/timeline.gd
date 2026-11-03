@@ -3,6 +3,12 @@ extends RefCounted
 ## Всё в секундах от начала. 180.0 с = 5400 кадров при 30 fps.
 
 const FPS := 30.0
+const HAS_CLOCK := true
+const HAS_EVAL := true
+const TITLE_TEXT := "11 ХОДОВ"
+const TITLE_SUB := "мастер-класс по скоростному поражению"
+const END_MAIN := "0 — 1"
+const END_SUB := "11 ходов. 15 очков рейтинга. 0 понимания."
 const TOTAL := 180.0
 const MOVE_DUR := 1.15
 const MATE_T := 158.0
@@ -83,6 +89,24 @@ static func shot_at(t: float) -> Dictionary:
 		if t >= float(s["t0"]) and t < float(s["t1"]):
 			return s
 	return SHOTS[SHOTS.size() - 1]
+
+
+static func schedule() -> Array:
+	return SCHEDULE
+
+
+static func caption_fade(t: float) -> float:
+	for c in CAPTIONS:
+		if t >= float(c[0]) and t <= float(c[1]):
+			return minf(clampf((t - float(c[0])) / 0.28, 0.0, 1.0), clampf((float(c[1]) - t) / 0.28, 0.0, 1.0))
+	return 0.0
+
+
+static func clock_text(t: float) -> Array:
+	var wsec := 900.0 - maxf(0.0, (t - 26.0)) * 4.1
+	wsec = maxf(wsec, 318.0)
+	return ["%d:%02d  белые" % [int(wsec) / 60, int(wsec) % 60],
+			"14:%02d  чёрные" % [52 - int(maxf(0.0, t - 26.0) / 30.0)]]
 
 
 static func caption_at(t: float) -> String:

@@ -7,7 +7,7 @@
 
     python3 tools/tts_build.py --voice filipp [--speed 0.96] [--only 1,2,3]
 """
-import argparse, json, os, pathlib, re, subprocess, sys, urllib.parse, urllib.request
+import argparse, json, os, pathlib, re, subprocess, sys, time, urllib.parse, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 VO = ROOT / "vo"
@@ -60,8 +60,15 @@ def synth(text: str, voice: str, speed: float, out: pathlib.Path, env: dict) -> 
     req = urllib.request.Request(
         "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", data=data,
         headers={"Authorization": "Api-Key " + env["YANDEX_API_KEY"]})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        body = r.read()
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                body = r.read()
+            break
+        except Exception as e:
+            if attempt == 3:
+                raise
+            time.sleep(2.0 * (attempt + 1))
     if len(body) < 2000:
         raise RuntimeError(f"короткий ответ TTS: {body[:200]!r}")
     out.write_bytes(body)
@@ -78,11 +85,15 @@ def main() -> int:
     ap.add_argument("--voice", default="filipp")
     ap.add_argument("--speed", type=float, default=0.96)
     ap.add_argument("--only", default="")
+    ap.add_argument("--cues", default="render/cues.json")
+    ap.add_argument("--dir", default="vo")
     args = ap.parse_args()
 
     env = load_env()
-    cues = json.loads((ROOT / "render" / "cues.json").read_text())
-    LINES.mkdir(parents=True, exist_ok=True)
+    cues = json.loads((ROOT / args.cues).read_text())
+    out_dir = ROOT / args.dir
+    lines_dir = out_dir / "lines"
+    lines_dir.mkdir(parents=True, exist_ok=True)
 
     only = {int(x) for x in args.only.split(",") if x.strip()} if args.only else None
     result, overflow = [], []
@@ -96,7 +107,7 @@ def main() -> int:
         end = max(cap["end"], at + 1.6)
         avail = end - at
         text = normalize(cap["text"])
-        out = LINES / f"{i:02d}.mp3"
+        out = lines_dir / f"{i:02d}.mp3"
         speed = args.speed
         synth(text, args.voice, speed, out, env)
         dur = duration(out)
@@ -122,12 +133,12 @@ def main() -> int:
 
     payload = {"voice": args.voice, "speed": args.speed, "lines": result}
     if only:
-        old = json.loads((VO / "lines.json").read_text()) if (VO / "lines.json").exists() else {"lines": []}
+        old = json.loads((out_dir / "lines.json").read_text()) if (out_dir / "lines.json").exists() else {"lines": []}
         merged = {l["i"]: l for l in old.get("lines", [])}
         for l in result:
             merged[l["i"]] = l
         payload["lines"] = [merged[k] for k in sorted(merged)]
-    (VO / "lines.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1))
+    (out_dir / "lines.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1))
     print(f"\nсгенерировано {len(result)} реплик, выходит за окно: {len(overflow)}")
     return 0
 

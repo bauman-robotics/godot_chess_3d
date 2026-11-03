@@ -4,9 +4,14 @@ import json, sys, pathlib
 import chess
 import chess.pgn
 
+import argparse
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PGN = ROOT / "docs" / "game.pgn"
-OUT = ROOT / "godot" / "data" / "game.json"
+ap = argparse.ArgumentParser()
+ap.add_argument("--pgn", default="docs/game.pgn")
+ap.add_argument("--out", default="godot/data/game.json")
+_args = ap.parse_args()
+PGN = ROOT / _args.pgn
+OUT = ROOT / _args.out
 
 def main() -> int:
     game = chess.pgn.read_game(PGN.open())
@@ -74,15 +79,7 @@ def main() -> int:
 
     # Проверки
     assert moves[-1]["mate"], "последний ход должен быть матом"
-    b = game.board()
-    for m in list(game.mainline_moves())[:-1]:
-        b.push(m)
-    # была ли мат-в-1 уже до 11.b3?
-    early = [b.san(mm) for mm in b.legal_moves
-             if (lambda bb: (bb.push(mm), bb.is_checkmate())[1])(b.copy())]
-    print("\nМат-в-1 в позиции перед 11.b3:", early)
-    print("Материал (белые-чёрные):", sum(len(b.pieces(p, chess.WHITE)) for p in range(1,7)),
-          "-", sum(len(b.pieces(p, chess.BLACK)) for p in range(1,7)))
+    print(f"полуходов: {len(moves)}, финал: {moves[-1]['san']}, мат: {moves[-1]['mate']}")
     print("JSON:", OUT.relative_to(ROOT))
     return 0
 

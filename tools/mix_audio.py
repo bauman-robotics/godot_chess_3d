@@ -18,10 +18,13 @@ def build_cmd(args, lines) -> list[str]:
     dur = args.duration
     vs = args.video_start
     cmd = ["ffmpeg", "-v", "error", "-y"]
-    if vs > 0:
-        cmd += ["-ss", f"{vs:.3f}"]
-    cmd += ["-i", str(ROOT / args.video),
-           "-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
+    if args.audio_out:
+        cmd += ["-f", "lavfi", "-i", "color=c=black:s=16x16:r=1"]
+    else:
+        if vs > 0:
+            cmd += ["-ss", f"{vs:.3f}"]
+        cmd += ["-i", str(ROOT / args.video)]
+    cmd += ["-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
     for l in lines:
         cmd += ["-i", str(ROOT / l["file"])]
     cmd += ["-i", str(ROOT / args.music)]
@@ -49,10 +52,14 @@ def build_cmd(args, lines) -> list[str]:
                   f"loudnorm=I={args.lufs}:TP=-1.5:LRA=11,"
                   "alimiter=limit=0.97:level=false[mix]")
 
-    cmd += ["-filter_complex", ";".join(chains),
-            "-map", "0:v:0", "-map", "[mix]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
-            "-t", f"{dur:.3f}", "-movflags", "+faststart", str(ROOT / args.out)]
+    if args.audio_out:
+        cmd += ["-filter_complex", ";".join(chains), "-map", "[mix]",
+                "-c:a", "aac", "-b:a", "256k", "-t", f"{dur:.3f}", str(ROOT / args.audio_out)]
+    else:
+        cmd += ["-filter_complex", ";".join(chains),
+                "-map", "0:v:0", "-map", "[mix]",
+                "-c:v", "copy", "-c:a", "aac", "-b:a", "256k",
+                "-t", f"{dur:.3f}", "-movflags", "+faststart", str(ROOT / args.out)]
     return cmd
 
 
@@ -69,10 +76,12 @@ def main() -> int:
     ap.add_argument("--duration", type=float, default=180.0)
     ap.add_argument("--video-start", type=float, default=0.0)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--lines", default="vo/lines.json")
+    ap.add_argument("--audio-out", default="", help="если задано — писать только звук, без видео")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    data = json.loads((ROOT / "vo" / "lines.json").read_text())
+    data = json.loads((ROOT / args.lines).read_text())
     hi = args.video_start + args.duration
     lines = sorted([l for l in data["lines"]
                     if args.video_start <= l["at"] < hi], key=lambda l: l["at"])

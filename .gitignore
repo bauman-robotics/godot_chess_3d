@@ -12,6 +12,7 @@ Godot_v*-stable_linux.x86_64
 render/*.mp4
 render/*.avi
 vo/lines/*.mp3
+vo2/lines/
 *.m4a
 render/*.log
 vo/*.mp4
